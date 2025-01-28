@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "composite": true
+  },
+  "include": ["src/**/*"],
+  "references": [
+    { "path": "../shared/tsconfig.json" },
+    { "path": "../prowlarr/tsconfig.json" },
+    { "path": "../sonarr/tsconfig.json" },
+    { "path": "../gotify/tsconfig.json" }
+  ]
+} 
