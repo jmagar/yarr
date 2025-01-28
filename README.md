@@ -70,6 +70,7 @@ This monorepo is organized into modular packages, each serving a specific purpos
 - [Typescript SDK](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/README.md)
 - [Create Typescript Server](https://github.com/modelcontextprotocol/create-typescript-server/blob/main/README.md)
 - [Template Typescript Server](https://github.com/modelcontextprotocol/create-typescript-server/blob/main/template/README.md.ejs)
+- [Building MCP Servers with LLMs](https://modelcontextprotocol.io/llms-full.txt)
 
 ## 🏛️ Architecture
 
@@ -90,3 +91,113 @@ The modular design allows for:
 - Independent service deployment
 - Flexible interaction methods
 - Consistent API patterns across services
+
+## 🚀 Getting Started
+
+### Prerequisites
+```bash
+# Clone and setup repository
+git clone https://github.com/jmagar/yarr
+cd yarr
+pnpm install
+```
+
+### Configuration
+
+1. Create `.env` file from template:
+```bash
+cp .env.template .env
+```
+
+Then add your service API keys:
+```env
+# Sonarr Configuration
+SONARR_URL=http://localhost:8989
+SONARR_API_KEY=your_sonarr_api_key
+
+# Prowlarr Configuration  
+PROWLARR_URL=http://localhost:9696
+PROWLARR_API_KEY=your_prowlarr_api_key
+
+# Overseerr Configuration
+OVERSEERR_URL=http://localhost:5055
+OVERSEERR_API_KEY=your_overseerr_api_key
+
+# Gotify Configuration
+GOTIFY_URL=http://localhost:8080
+GOTIFY_APP_TOKEN=your_gotify_app_token
+GOTIFY_CLIENT_TOKEN=your_gotify_client_token  # Optional, for receiving messages
+```
+
+2. Configure Claude Desktop:
+
+> **Important**: Use full paths in your configuration to ensure Claude Desktop can find the executables and project directory.
+
+```json
+{
+  "mcpServers": {
+    "yarr": {
+      "command": "C:\\path\\to\\pnpm.cmd",
+      "args": ["start"],
+      "cwd": "C:\\path\\to\\yarr",
+      "transport": {
+        "type": "stdio"
+      },
+      "env": {
+        "NODE_ENV": "production"
+      }
+    }
+  }
+}
+```
+
+> Note: Replace `C:\\path\\to\\pnpm.cmd` with your actual path to pnpm (usually in `%APPDATA%\\npm\\pnpm.cmd` on Windows) and `C:\\path\\to\\yarr` with your actual project directory.
+
+### Available Tools
+
+#### Sonarr
+```typescript
+// Series Management
+sonarr:search              - Search for TV shows
+sonarr:list-series         - List all monitored TV series  
+sonarr:series-details      - Get detailed information about a series
+sonarr:add-series         - Add a new series to monitor
+sonarr:monitor-season     - Monitor or unmonitor a season
+sonarr:list-profiles      - List quality and language profiles
+sonarr:upcoming          - Get upcoming episodes
+sonarr:queue             - Get current download queue
+sonarr:remove-from-queue - Remove item from download queue
+```
+
+#### Prowlarr
+```typescript
+prowlarr:search           - Search across all indexers
+prowlarr:list-indexers    - List configured indexers
+prowlarr:indexer-stats    - Get indexer performance stats
+prowlarr:check-config     - Validate Prowlarr connection
+```
+
+#### Overseerr
+```typescript
+overseerr:search          - Search for movies and TV shows
+overseerr:request         - Request a movie or TV show
+overseerr:list-requests   - List media requests
+overseerr:update-request  - Update request status
+overseerr:trending        - Get trending media with recommendations
+overseerr:available       - Get popular available media
+overseerr:status          - Get system status
+```
+
+#### Gotify
+```typescript
+gotify:messages:list      - List messages with pagination
+gotify:messages:send      - Send a new message
+gotify:messages:delete    - Delete a message by ID
+gotify:messages:cleanup   - Delete old messages
+gotify:apps:list         - List all applications
+gotify:apps:create       - Create a new application
+gotify:clients:list      - List all clients
+gotify:clients:create    - Create a new client
+gotify:health           - Check Gotify server health
+gotify:stats            - Get Gotify statistics
+```

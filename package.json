@@ -8,6 +8,7 @@
     "build:shared": "pnpm --filter @media-mcp/shared build",
     "build:services": "pnpm --filter @media-mcp/prowlarr --filter @media-mcp/sonarr --filter @media-mcp/gotify --filter @media-mcp/overseerr build",
     "build:server": "pnpm --filter @media-mcp/server build",
+    "prestart": "node build/project-setup.js",
     "start": "pnpm --filter @media-mcp/server start",
     "dev": "pnpm -r dev",
     "test": "pnpm -r test",
