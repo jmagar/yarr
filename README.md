@@ -1,4 +1,4 @@
-# 🎬 Media Stack MCP Server
+# 🎬 YARR Media Stack MCP Server
 
 A comprehensive Model Context Protocol (MCP) server that bridges the gap between Large Language Models (LLMs) and your self-hosted media technology stack. This project enables intelligent automation and natural language control of your media services while maintaining traditional programmatic access.
 
