@@ -137,21 +137,30 @@ GOTIFY_CLIENT_TOKEN=your_gotify_client_token  # Optional, for receiving messages
 {
   "mcpServers": {
     "yarr": {
-      "command": "C:\\path\\to\\pnpm.cmd",
-      "args": ["start"],
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "args": ["C:\\path\\to\\yarr\\packages\\server\\dist\\index.js"],
       "cwd": "C:\\path\\to\\yarr",
       "transport": {
         "type": "stdio"
       },
       "env": {
-        "NODE_ENV": "production"
+        "NODE_ENV": "production",
+        "PROWLARR_URL": "http://localhost:9696",
+        "PROWLARR_API_KEY": "your_prowlarr_api_key",
+        "SONARR_URL": "http://localhost:8989",
+        "SONARR_API_KEY": "your_sonarr_api_key",
+        "OVERSEERR_URL": "http://localhost:5055",
+        "OVERSEERR_API_KEY": "your_overseerr_api_key",
+        "GOTIFY_URL": "http://localhost:8080",
+        "GOTIFY_APP_TOKEN": "your_gotify_app_token",
+        "GOTIFY_CLIENT_TOKEN": "your_gotify_client_token"
       }
     }
   }
 }
 ```
 
-> Note: Replace `C:\\path\\to\\pnpm.cmd` with your actual path to pnpm (usually in `%APPDATA%\\npm\\pnpm.cmd` on Windows) and `C:\\path\\to\\yarr` with your actual project directory.
+> Note: Replace `C:\\path\\to\\yarr` with your actual project directory path.
 
 ### Available Tools
 
