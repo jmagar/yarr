@@ -4,7 +4,7 @@ This is a template for adding new services to the Media-MCP project. Follow this
 
 ## Quick Start
 
-1. Copy this template:
+1. Copy the template:
 ```bash
 cp -r docs/new-service-template packages/your-service
 cd packages/your-service
@@ -13,7 +13,37 @@ cd packages/your-service
 2. Update package name in `package.json`:
 ```json
 {
-  "name": "@media-mcp/your-service"
+  "name": "@media-mcp/your-service",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc -w",
+    "lint": "eslint src",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@media-mcp/shared": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.4.1",
+    "dotenv": "^16.4.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.12.0",
+    "@typescript-eslint/eslint-plugin": "^8.22.0",
+    "@typescript-eslint/parser": "^8.22.0",
+    "eslint": "^9.19.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.3"
+  }
 }
 ```
 
@@ -32,321 +62,695 @@ YOUR_SERVICE_API_KEY=your_api_key_here
 }
 ```
 
-## Implementation Checklist
+## Implementation Guide
 
 ### 1. Types (`src/types.ts`)
-- [ ] Define service configuration interface
-- [ ] Define API response types
-- [ ] Define resource types
-- [ ] Define command/operation types
-- [ ] Define statistics/metrics types
-- [ ] Export all types
+
+Define your service types following these patterns:
+
+```typescript
+/**
+ * Configuration interface for the service
+ */
+export interface ServiceConfig {
+  url: string;
+  apiKey: string;
+  timeout?: number;
+  retryAttempts?: number;
+  rateLimitPerSecond?: number;
+}
+
+/**
+ * Common response fields shared across all responses
+ */
+export interface BaseResponse {
+  id: number;
+  name: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Resource response interface
+ */
+export interface ResourceResponse extends BaseResponse {
+  type: string;
+  enabled: boolean;
+  settings: Record<string, unknown>;
+  tags: string[];
+  metadata: Record<string, unknown>;
+}
+
+/**
+ * Command response interface
+ */
+export interface CommandResponse extends BaseResponse {
+  command: string;
+  parameters: Record<string, unknown>;
+  progress: number;
+  message: string;
+  startTime: string;
+  endTime?: string;
+  error?: string;
+}
+
+/**
+ * Statistics response interface
+ */
+export interface StatsResponse {
+  totalResources: number;
+  activeResources: number;
+  lastUpdate: string;
+  metrics: {
+    requestCount: number;
+    successRate: number;
+    averageResponseTime: number;
+    errorRate: number;
+  };
+  resourceStats: {
+    byType: Record<string, number>;
+    byStatus: Record<string, number>;
+  };
+}
+
+/**
+ * Health check response interface
+ */
+export interface HealthCheckResponse {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  version: string;
+  uptime: number;
+  timestamp: string;
+  checks: Array<{
+    name: string;
+    status: 'pass' | 'warn' | 'fail';
+    message?: string;
+    timestamp: string;
+    duration: number;
+    metadata?: Record<string, unknown>;
+  }>;
+  resources: {
+    cpu: number;
+    memory: number;
+    connections: number;
+  };
+}
+
+/**
+ * Common query parameters
+ */
+export interface QueryParams {
+  page?: number;
+  pageSize?: number;
+  sort?: string;
+  order?: 'asc' | 'desc';
+  status?: string[];
+  type?: string[];
+  tags?: string[];
+  search?: string;
+  from?: string;
+  to?: string;
+  includeDisabled?: boolean;
+  fields?: string[];
+}
+```
 
 ### 2. API Client (`src/api.ts`)
-- [ ] Implement base request method with error handling
-- [ ] Add resource management methods (CRUD)
-- [ ] Add command/operation methods
-- [ ] Add statistics/metrics methods
-- [ ] Handle rate limiting
-- [ ] Handle authentication
-- [ ] Handle pagination
 
-### 3. Service Layer (`src/service.ts`)
-- [ ] Implement service class with API client
-- [ ] Add resource management methods
-- [ ] Add command/operation methods
-- [ ] Add statistics/metrics methods
-- [ ] Add enhanced operations combining multiple API calls
-- [ ] Add error handling and retries
-- [ ] Add data transformation/formatting
+Implement your API client with these features:
 
-### 4. Tools (`src/tools/index.ts`)
-- [ ] Implement tool registration function
-- [ ] Add resource management tools
-- [ ] Add command/operation tools
-- [ ] Add statistics/metrics tools
-- [ ] Add enhanced operation tools
-- [ ] Add proper error handling
-- [ ] Add descriptive help text
-- [ ] Add parameter validation
+1. Rate Limiting
+2. Retry Logic
+3. Error Handling
+4. Request Timeout
+5. Query Parameter Handling
 
-### 5. Integration
-- [ ] Update root package.json
-- [ ] Update server package.json
-- [ ] Update server index.ts
-- [ ] Add environment variables
-- [ ] Test all tools
-
-## API Integration
-
-### Authentication
-- API Key in headers: `X-Api-Key`
-- Bearer token: `Authorization: Bearer <token>`
-- Basic auth: `Authorization: Basic <base64>`
-- Custom headers: `X-Custom-Header: value`
-
-### Rate Limiting
 ```typescript
-class RateLimiter {
+export class ServiceApi {
   private lastRequest = 0;
   private readonly minInterval: number;
+  private readonly defaultTimeout = 30000;
+  private readonly defaultRetryAttempts = 3;
+  private readonly defaultRateLimit = 2;
 
-  constructor(requestsPerSecond: number) {
-    this.minInterval = 1000 / requestsPerSecond;
+  constructor(private config: ServiceConfig) {
+    this.minInterval = 1000 / (config.rateLimitPerSecond ?? this.defaultRateLimit);
   }
 
-  async acquire() {
+  private async rateLimit(): Promise<void> {
     const now = Date.now();
-    const wait = this.lastRequest + this.minInterval - now;
-    if (wait > 0) {
-      await new Promise(r => setTimeout(r, wait));
+    const elapsed = now - this.lastRequest;
+    if (elapsed < this.minInterval) {
+      await new Promise(resolve => setTimeout(resolve, this.minInterval - elapsed));
     }
     this.lastRequest = Date.now();
   }
-}
 
-// Usage in API client
-private rateLimiter = new RateLimiter(2); // 2 requests per second
+  private async withRetry<T>(operation: () => Promise<T>): Promise<T> {
+    let lastError: Error | undefined;
+    const attempts = this.config.retryAttempts ?? this.defaultRetryAttempts;
 
-async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  await this.rateLimiter.acquire();
-  // ... rest of request code
-}
-```
-
-### Pagination
-```typescript
-async getAllPages<T>(endpoint: string): Promise<T[]> {
-  let page = 1;
-  const results: T[] = [];
-  
-  while (true) {
-    const response = await this.request<{
-      items: T[];
-      totalPages: number;
-    }>(`${endpoint}?page=${page}`);
-    
-    results.push(...response.items);
-    
-    if (page >= response.totalPages) break;
-    page++;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error as Error;
+        if (error instanceof ServiceError) {
+          if (error.code === 'RATE_LIMIT') {
+            const retryAfter = parseInt((error.context?.retryAfter as string) ?? '1');
+            await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+            continue;
+          }
+          if (['AUTHENTICATION_ERROR', 'VALIDATION_ERROR'].includes(error.code)) {
+            throw error;
+          }
+        }
+        if (attempt < attempts) {
+          await new Promise(resolve => 
+            setTimeout(resolve, Math.min(1000 * Math.pow(2, attempt), 5000))
+          );
+        }
+      }
+    }
+    throw lastError;
   }
-  
-  return results;
-}
-```
 
-### Error Handling
-```typescript
-// API Errors
-export enum ErrorCode {
-  NETWORK_ERROR = 'NETWORK_ERROR',
-  API_ERROR = 'API_ERROR',
-  RATE_LIMIT = 'RATE_LIMIT',
-  AUTH_ERROR = 'AUTH_ERROR'
-}
+  private async request<T>(
+    endpoint: string, 
+    options: RequestInit = {},
+    query?: QueryParams
+  ): Promise<T> {
+    await this.rateLimit();
 
-// Error with context
-throw new ServiceError(
-  ErrorCode.RATE_LIMIT,
-  'Rate limit exceeded',
-  {
-    retryAfter: response.headers.get('Retry-After'),
-    limit: response.headers.get('X-RateLimit-Limit')
-  }
-);
+    const url = new URL(`${this.config.url}/api/v1${endpoint}`);
+    if (query) {
+      Object.entries(query).forEach(([key, value]) => {
+        if (value !== undefined) {
+          if (Array.isArray(value)) {
+            value.forEach(v => url.searchParams.append(key, v.toString()));
+          } else {
+            url.searchParams.set(key, value.toString());
+          }
+        }
+      });
+    }
 
-// Error handling in tools
-try {
-  // ... operation
-} catch (error) {
-  if (error instanceof ServiceError) {
-    switch (error.code) {
-      case ErrorCode.RATE_LIMIT:
-        return {
-          content: [{
-            type: "text",
-            text: `Rate limit exceeded. Try again in ${error.context.retryAfter} seconds.`
-          }],
-          isError: true
-        };
-      // ... handle other error types
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(), 
+      this.config.timeout ?? this.defaultTimeout
+    );
+
+    try {
+      const response = await fetch(url.toString(), {
+        ...options,
+        headers: {
+          'X-Api-Key': this.config.apiKey,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          ...options.headers
+        },
+        signal: controller.signal
+      });
+
+      // Handle various response statuses
+      if (!response.ok) {
+        // ... error handling implementation
+      }
+
+      return response.json();
+    } catch (error) {
+      // ... error handling implementation
+    } finally {
+      clearTimeout(timeout);
     }
   }
-  // ... handle unknown errors
+
+  // Implement your API methods here
 }
 ```
 
-## Tool Design
+### 3. Service Layer (`src/service.ts`)
 
-### Naming Convention
-- Use format: `service:category:action`
-- Examples:
-  - `service:resources:list`
-  - `service:resources:get`
-  - `service:commands:execute`
-  - `service:stats:get`
+Implement your service layer with these features:
 
-### Parameter Validation
+1. Enhanced Resource Management
+2. Command Operations
+3. Statistics & Health Monitoring
+4. Data Validation
+5. Data Transformation
+
 ```typescript
-// Simple parameter
-{
-  id: z.number().describe("Resource ID")
-}
+export class Service {
+  protected readonly api: ServiceApi;
+  protected readonly config: ServiceConfig;
 
-// Complex parameters
-{
-  filter: z.object({
-    status: z.enum(['active', 'inactive']).describe("Filter by status"),
-    type: z.enum(['type1', 'type2']).optional().describe("Filter by type"),
-    tags: z.array(z.string()).optional().describe("Filter by tags")
-  }).describe("Filter options")
-}
+  constructor(config: ServiceConfig) {
+    this.config = {
+      timeout: 30000,
+      retryAttempts: 3,
+      rateLimitPerSecond: 2,
+      ...config
+    };
+    this.api = new ServiceApi(this.config);
+  }
 
-// Date ranges
-{
-  start: z.string().datetime().describe("Start date (ISO 8601)"),
-  end: z.string().datetime().optional().describe("End date (ISO 8601)")
+  // Resource Management
+  async getResourcesWithMetadata(query?: QueryParams): Promise<ResourceResponse[]> {
+    const resources = await this.api.getResources(query);
+    return resources.map(resource => this.enrichResourceData(resource));
+  }
+
+  // Command Operations
+  async executeCommandWithValidation(
+    command: string, 
+    params?: Record<string, unknown>
+  ): Promise<CommandResponse> {
+    this.validateCommand(command);
+    if (params) {
+      this.validateCommandParams(params);
+    }
+    const result = await this.api.executeCommand(command, params);
+    return this.enrichCommandData(result);
+  }
+
+  // Statistics & Health
+  async getEnhancedStats(query?: QueryParams): Promise<StatsResponse & { computed: any }> {
+    const [stats, health] = await Promise.all([
+      this.api.getStats(query),
+      this.api.getHealth()
+    ]);
+    return this.enrichStatsData(stats, health);
+  }
+
+  // Validation Methods
+  protected validateResourceData(data: Partial<ResourceResponse>): void {
+    // ... validation implementation
+  }
+
+  // Helper Methods
+  protected enrichResourceData(resource: ResourceResponse): ResourceResponse & { metadata: any } {
+    // ... data enrichment implementation
+  }
 }
 ```
 
-### Response Formatting
+### 4. Tools (`src/tools/index.ts`)
+
+Implement your tools with these features:
+
+1. Common Parameter Schemas
+2. Response Formatting
+3. Error Handling
+4. Input Validation
+5. Enhanced Responses
+
 ```typescript
-// Success response
-return {
-  content: [{
-    type: "text",
-    text: JSON.stringify(result, null, 2)
-  }]
+// Common tool response types
+interface ToolResponse {
+  content: Array<{
+    type: "text" | "error" | "success" | "warning" | "info";
+    text: string;
+  }>;
+  isError?: boolean;
+}
+
+// Common parameter schemas
+const commonParameters = {
+  limit: z.number().min(1).max(100).optional().describe("Number of items to return"),
+  offset: z.number().min(0).optional().describe("Number of items to skip"),
+  sort: z.string().optional().describe("Sort field"),
+  order: z.enum(['asc', 'desc']).optional().describe("Sort order"),
+  filter: z.record(z.unknown()).optional().describe("Filter criteria")
 };
 
-// Error response
-return {
-  content: [{
-    type: "text",
-    text: `Error: ${error.message}`
-  }],
-  isError: true
-};
+export function registerTools(server: McpServer, service: Service) {
+  // Resource Management Tools
+  server.tool(
+    "service:resources:list",
+    "List all resources with metadata",
+    {
+      ...commonParameters,
+      status: z.array(z.string()).optional().describe("Filter by status"),
+      type: z.array(z.string()).optional().describe("Filter by type"),
+      tags: z.array(z.string()).optional().describe("Filter by tags")
+    },
+    async (params) => {
+      try {
+        const resources = await service.getResourcesWithMetadata(params);
+        return formatToolResponse(resources);
+      } catch (error) {
+        return formatErrorResponse(error);
+      }
+    }
+  );
 
-// Progress response
-return {
-  content: [{
-    type: "text",
-    text: `Operation started. Use 'service:commands:status ${commandId}' to check progress.`
-  }]
-};
+  // ... implement other tools
+}
 ```
 
 ## Testing
 
-### Unit Tests
-```typescript
-// API client tests
-describe('ServiceApi', () => {
-  it('should handle rate limiting', async () => {
-    // Test implementation
-  });
-});
+Add these test files to your service:
 
-// Service layer tests
+1. `src/__tests__/api.test.ts`
+2. `src/__tests__/service.test.ts`
+3. `src/__tests__/tools.test.ts`
+
+Follow this testing pattern:
+
+```typescript
+import { describe, it, expect, vi } from 'vitest';
+import { Service } from '../service.js';
+import { ServiceApi } from '../api.js';
+
 describe('Service', () => {
-  it('should combine multiple API calls', async () => {
-    // Test implementation
-  });
-});
+  const mockConfig = {
+    url: 'http://localhost:1234',
+    apiKey: 'test-key',
+    timeout: 5000,
+    retryAttempts: 1
+  };
 
-// Tool tests
-describe('Tools', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should handle successful requests', async () => {
+    const service = new Service(mockConfig);
+    // Add your tests
+  });
+
   it('should handle errors properly', async () => {
-    // Test implementation
+    // Add error handling tests
+  });
+
+  it('should validate inputs', async () => {
+    // Add validation tests
+  });
+
+  it('should enrich response data', async () => {
+    // Add data transformation tests
   });
 });
 ```
 
-### Integration Tests
-```bash
-# Start test server
-pnpm test:server
+## Integration
 
-# Run integration tests
-pnpm test:integration
+1. Add your service to the server's service registry
+2. Add environment variables to templates
+3. Update documentation
+4. Add integration tests
+5. Test all tools with the MCP CLI 
 
-# Test specific tool
-npx @wong2/mcp-cli node packages/server/dist/index.js
+# Tool Creation Guide
+
+## Tool Patterns
+
+When creating tools for your service, follow these patterns:
+
+### 1. Naming Convention
+
+Tools should follow this naming pattern:
+```typescript
+"service:<category>:<action>"
 ```
 
-## Debugging
+Examples:
+- `service:resources:list`
+- `service:command:execute`
+- `service:health:check`
 
-### Tool Debugging
+### 2. Tool Structure
+
+Each tool should have:
+1. A unique identifier
+2. A clear description
+3. Parameter schema using Zod
+4. Handler function with error handling
+
 ```typescript
-const DEBUG = process.env.DEBUG === '1';
-
-function debug(...args: any[]) {
-  if (DEBUG) console.error(...args);
-}
-
 server.tool(
-  "service:operation",
-  "Description",
-  { /* params */ },
-  async (params) => {
-    debug('Params:', params);
+  "service:resources:list",           // Identifier
+  "List all resources with metadata", // Description
+  {                                  // Parameter Schema
+    ...commonParameters,
+    status: z.array(z.string()).optional().describe("Filter by status"),
+    type: z.array(z.string()).optional().describe("Filter by type")
+  },
+  async (params, _extra) => {        // Handler
     try {
-      const result = await service.operation(params);
-      debug('Result:', result);
-      return { /* ... */ };
+      const result = await service.someOperation(params);
+      return formatToolResponse(result);
     } catch (error) {
-      debug('Error:', error);
-      throw error;
+      return formatErrorResponse(error);
     }
   }
 );
 ```
 
-### API Debugging
+### 3. Common Parameters
+
+Use these standard parameter patterns:
+
 ```typescript
-private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  debug('Request:', {
-    url: `${this.config.url}/api/v1${endpoint}`,
-    options
-  });
-
-  const response = await fetch(/* ... */);
+const commonParameters = {
+  // Pagination
+  limit: z.number().min(1).max(100).optional()
+    .describe("Number of items to return"),
+  offset: z.number().min(0).optional()
+    .describe("Number of items to skip"),
   
-  debug('Response:', {
-    status: response.status,
-    headers: Object.fromEntries(response.headers.entries()),
-    body: await response.clone().text()
-  });
+  // Sorting
+  sort: z.string().optional()
+    .describe("Sort field"),
+  order: z.enum(['asc', 'desc']).optional()
+    .describe("Sort order"),
+  
+  // Filtering
+  filter: z.record(z.unknown()).optional()
+    .describe("Filter criteria"),
+  
+  // Common Options
+  includeDisabled: z.boolean().optional()
+    .describe("Include disabled items"),
+  fields: z.array(z.string()).optional()
+    .describe("Fields to return")
+};
+```
 
-  // ... rest of request code
+### 4. Response Formatting
+
+Always use the standard response formatters:
+
+```typescript
+function formatToolResponse(
+  data: unknown, 
+  type: "text" | "error" | "success" | "warning" | "info" = "text"
+): ToolResponse {
+  return {
+    content: [{
+      type: "text",
+      text: typeof data === 'string' ? data : JSON.stringify(data, null, 2)
+    }],
+    isError: type === "error"
+  };
+}
+
+function formatErrorResponse(error: unknown): ToolResponse {
+  return formatToolResponse(
+    `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    "error"
+  );
 }
 ```
 
-## Common Issues
+### 5. Tool Categories
 
-### Module Resolution
-- Always use `.js` extension in imports
-- Use proper path aliases in tsconfig.json
-- Check package.json exports field
+Organize tools into these standard categories:
 
-### Type Exports
-- Use `export type` for type-only exports
-- Use proper type imports
-- Check tsconfig.json settings
+1. **Resource Management**
+   ```typescript
+   // List resources
+   server.tool("service:resources:list", ...);
+   
+   // Get resource details
+   server.tool("service:resources:get", ...);
+   
+   // Create resource
+   server.tool("service:resources:create", ...);
+   
+   // Update resource
+   server.tool("service:resources:update", ...);
+   
+   // Delete resource
+   server.tool("service:resources:delete", ...);
+   ```
 
-### Tool Parameters
-- Always include parameter descriptions
-- Use proper zod types
-- Handle optional parameters
+2. **Command Operations**
+   ```typescript
+   // Execute command
+   server.tool("service:command:execute", ...);
+   
+   // Check command status
+   server.tool("service:command:status", ...);
+   ```
 
-### Rate Limiting
-- Implement proper rate limiting
-- Handle rate limit errors
-- Use exponential backoff
+3. **Statistics & Health**
+   ```typescript
+   // Get statistics
+   server.tool("service:stats:get", ...);
+   
+   // Check health
+   server.tool("service:health:check", ...);
+   ```
 
-### Authentication
-- Handle token expiration
-- Refresh tokens when needed
-- Secure API key storage 
+4. **Utility Tools**
+   ```typescript
+   // Validate configuration
+   server.tool("service:validate", ...);
+   
+   // Test connection
+   server.tool("service:test", ...);
+   ```
+
+### 6. Error Handling
+
+Implement consistent error handling:
+
+```typescript
+try {
+  // Operation
+  const result = await service.someOperation();
+  return formatToolResponse(result);
+} catch (error) {
+  if (error instanceof ServiceError) {
+    // Handle known errors
+    return formatErrorResponse(error);
+  }
+  // Handle unknown errors
+  return formatErrorResponse(new Error('Unknown error occurred'));
+}
+```
+
+### 7. Parameter Validation
+
+Use Zod for robust parameter validation:
+
+```typescript
+const schema = {
+  // Required parameters
+  name: z.string().min(2).max(100)
+    .describe("Resource name"),
+  
+  // Optional parameters with defaults
+  enabled: z.boolean().default(true)
+    .describe("Whether the resource is enabled"),
+  
+  // Enums
+  status: z.enum(['active', 'inactive', 'error'])
+    .describe("Resource status"),
+  
+  // Arrays
+  tags: z.array(z.string()).optional()
+    .describe("Resource tags"),
+  
+  // Nested objects
+  settings: z.object({
+    key: z.string(),
+    value: z.unknown()
+  }).optional().describe("Resource settings")
+};
+```
+
+### 8. Testing Tools
+
+Create test cases for each tool:
+
+```typescript
+describe('Resource Tools', () => {
+  const service = new Service(mockConfig);
+  
+  it('should list resources', async () => {
+    const result = await tools["service:resources:list"](
+      { limit: 10 },
+      mockExtra
+    );
+    expect(result.content[0].text).toContain('"resources":');
+  });
+  
+  it('should handle errors', async () => {
+    const result = await tools["service:resources:get"](
+      { id: -1 },
+      mockExtra
+    );
+    expect(result.isError).toBe(true);
+  });
+});
+```
+
+### 9. Documentation
+
+Document each tool with:
+1. Purpose
+2. Parameters
+3. Response format
+4. Examples
+5. Error cases
+
+Example:
+```typescript
+/**
+ * List resources with optional filtering and pagination
+ * 
+ * @param {Object} params
+ * @param {number} [params.limit=100] - Maximum number of items to return
+ * @param {number} [params.offset=0] - Number of items to skip
+ * @param {string[]} [params.status] - Filter by status
+ * @param {string[]} [params.type] - Filter by type
+ * @param {string[]} [params.tags] - Filter by tags
+ * 
+ * @returns {Promise<ToolResponse>} List of resources
+ * 
+ * @example
+ * // List active resources
+ * const result = await tools["service:resources:list"]({
+ *   status: ["active"],
+ *   limit: 10
+ * });
+ * 
+ * @throws {ServiceError}
+ * - VALIDATION_ERROR: Invalid parameters
+ * - AUTHENTICATION_ERROR: Invalid API key
+ * - API_ERROR: API request failed
+ */
+```
+
+### 10. Best Practices
+
+1. **Consistency**
+   - Use standard naming conventions
+   - Follow common parameter patterns
+   - Use consistent response formats
+
+2. **Validation**
+   - Validate all input parameters
+   - Use descriptive error messages
+   - Include validation context
+
+3. **Error Handling**
+   - Catch and handle all errors
+   - Provide meaningful error messages
+   - Include error context when available
+
+4. **Performance**
+   - Implement pagination
+   - Use efficient queries
+   - Cache when appropriate
+
+5. **Testing**
+   - Test happy path
+   - Test error cases
+   - Test edge cases
+   - Test parameter validation 

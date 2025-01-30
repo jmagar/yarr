@@ -13,7 +13,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc -w",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "dotenv": "^16.4.1"

@@ -1,56 +1,112 @@
-import { ServiceError } from '@media-mcp/shared';
+import { ServiceError, ErrorCodes } from '@media-mcp/shared';
 import { OverseerrConfig, MediaRequest, Media, User, SearchResult, Stats, ErrorCode } from './types.js';
 
 export class OverseerrApi {
+  private lastRequest = 0;
+  private readonly minInterval: number;
+  private readonly defaultTimeout = 30000;
+  private readonly defaultRetryAttempts = 3;
+  private readonly defaultRateLimit = 2;
+
   constructor(private config: OverseerrConfig) {
     if (!config.url || !config.apiKey) {
       throw new Error('Overseerr URL and API key are required');
     }
+    this.minInterval = 1000 / (config.rateLimitPerSecond ?? this.defaultRateLimit);
   }
 
-  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  /**
+   * Rate limiting implementation
+   */
+  private async rateLimit(): Promise<void> {
+    const now = Date.now();
+    const elapsed = now - this.lastRequest;
+    if (elapsed < this.minInterval) {
+      await new Promise(resolve => setTimeout(resolve, this.minInterval - elapsed));
+    }
+    this.lastRequest = Date.now();
+  }
+
+  private async withRetry<T>(operation: () => Promise<T>): Promise<T> {
+    let lastError: Error | undefined;
+    const attempts = this.config.retryAttempts ?? this.defaultRetryAttempts;
+
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        return await operation();
+      } catch (err) {
+        const error = err as Error;
+        lastError = error;
+        if (attempt < attempts) {
+          await new Promise(resolve => 
+            setTimeout(resolve, Math.min(1000 * Math.pow(2, attempt), 5000))
+          );
+        }
+      }
+    }
+    throw lastError;
+  }
+
+  /**
+   * Base request implementation
+   */
+  async request<T>(endpoint: string, options: {
+    method?: string;
+    params?: Record<string, unknown>;
+    body?: string;
+  } = {}): Promise<T> {
+    await this.rateLimit();
+
+    const url = new URL(`${this.config.url}/api/v1${endpoint}`);
+    if (options.params) {
+      Object.entries(options.params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          url.searchParams.set(key, String(value));
+        }
+      });
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      this.config.timeout ?? this.defaultTimeout
+    );
+
     try {
-      // Ensure URL ends with /api/v1
-      const baseUrl = this.config.url.endsWith('/') ? this.config.url.slice(0, -1) : this.config.url;
-      const apiUrl = `${baseUrl}/api/v1${endpoint}`;
-
-      console.error('Making request to:', apiUrl); // Debug logging
-
-      const response = await fetch(apiUrl, {
-        ...options,
+      const response = await fetch(url.toString(), {
+        method: options.method ?? 'GET',
         headers: {
           'X-Api-Key': this.config.apiKey,
-          'Accept': 'application/json',
           'Content-Type': 'application/json',
-          'X-Api-Version': '1',
-          ...options.headers
-        }
+          'Accept': 'application/json'
+        },
+        body: options.body,
+        signal: controller.signal
       });
 
       if (!response.ok) {
-        // Debug logging
-        console.error('Error response:', {
-          status: response.status,
-          statusText: response.statusText,
-          body: await response.text()
-        });
-
-        throw new ServiceError(
-          response.status === 401 ? ErrorCode.AUTH_ERROR : ErrorCode.API_ERROR,
-          `API error: ${response.statusText}`,
-          { status: response.status }
-        );
+        if (response.status === 401) {
+          throw new ServiceError(ErrorCodes.AUTHENTICATION_ERROR, 'Invalid API key');
+        }
+        if (response.status === 404) {
+          throw new ServiceError(ErrorCodes.NOT_FOUND, `Resource not found: ${endpoint}`);
+        }
+        throw new ServiceError(ErrorCodes.API_ERROR, `API error: ${response.statusText}`);
       }
 
       return response.json();
-    } catch (error) {
-      if (error instanceof ServiceError) throw error;
-      
-      throw new ServiceError(
-        ErrorCode.NETWORK_ERROR,
-        'Failed to connect to Overseerr',
-        { error }
-      );
+    } catch (err) {
+      const error = err as Error;
+      if (error.name === 'AbortError') {
+        throw new ServiceError(
+          ErrorCodes.TIMEOUT,
+          `Request timed out after ${this.config.timeout ?? this.defaultTimeout}ms`,
+          { endpoint }
+        );
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
@@ -68,47 +124,158 @@ export class OverseerrApi {
   }
 
   // Media Requests
-  async getRequests(params: {
-    take?: number;
-    skip?: number;
-    filter?: 'all' | 'pending' | 'approved' | 'declined' | 'processing' | 'available';
-    sort?: 'added' | 'modified';
-    requestedBy?: number;
-  } = {}): Promise<{ pageInfo: { pages: number; results: number }; results: MediaRequest[] }> {
-    const searchParams = new URLSearchParams();
-    if (params.take) searchParams.append('take', params.take.toString());
-    if (params.skip) searchParams.append('skip', params.skip.toString());
-    if (params.filter) searchParams.append('filter', params.filter);
-    if (params.sort) searchParams.append('sort', params.sort);
-    if (params.requestedBy) searchParams.append('requestedBy', params.requestedBy.toString());
-
-    return this.request(`/request?${searchParams.toString()}`);
+  async getRequests(status?: string, take = 10, skip = 0): Promise<{
+    pageInfo: {
+      results: number;
+      pages: number;
+      page: number;
+      pageSize: number;
+    };
+    results: Array<{
+      id: number;
+      status: string;
+      createdAt: string;
+      updatedAt: string;
+      type: 'movie' | 'tv';
+      is4k: boolean;
+      serverId: number;
+      profileId: number;
+      rootFolder: string;
+      languageProfileId?: number;
+      tags: string[];
+      media: {
+        id: number;
+        mediaType: 'movie' | 'tv';
+        tmdbId: number;
+        tvdbId?: number;
+        imdbId?: string;
+        status: string;
+        status4k: string;
+      };
+      requestedBy: {
+        id: number;
+        email: string;
+        username?: string;
+        displayName?: string;
+        avatar?: string;
+      };
+      modifiedBy?: {
+        id: number;
+        email: string;
+        username?: string;
+        displayName?: string;
+        avatar?: string;
+      };
+    }>;
+  }> {
+    const params = new URLSearchParams({
+      take: take.toString(),
+      skip: skip.toString()
+    });
+    if (status) params.append('status', status);
+    return this.request(`/request?${params.toString()}`);
   }
 
-  async getRequest(requestId: number): Promise<MediaRequest> {
-    return this.request<MediaRequest>(`/request/${requestId}`);
+  async getRequest(id: number): Promise<{
+    id: number;
+    status: string;
+    createdAt: string;
+    updatedAt: string;
+    type: 'movie' | 'tv';
+    is4k: boolean;
+    serverId: number;
+    profileId: number;
+    rootFolder: string;
+    languageProfileId?: number;
+    tags: string[];
+    media: {
+      id: number;
+      mediaType: 'movie' | 'tv';
+      tmdbId: number;
+      tvdbId?: number;
+      imdbId?: string;
+      status: string;
+      status4k: string;
+    };
+    requestedBy: {
+      id: number;
+      email: string;
+      username?: string;
+      displayName?: string;
+      avatar?: string;
+    };
+    modifiedBy?: {
+      id: number;
+      email: string;
+      username?: string;
+      displayName?: string;
+      avatar?: string;
+    };
+  }> {
+    return this.request(`/request/${id}`);
   }
 
-  async createRequest(params: {
+  async createRequest(data: {
     mediaType: 'movie' | 'tv';
     mediaId: number;
-    tvdbId?: number;
-    seasons?: number[];
-  }): Promise<MediaRequest> {
-    return this.request<MediaRequest>('/request', {
+    is4k?: boolean;
+    serverId?: number;
+    profileId?: number;
+    rootFolder?: string;
+    languageProfileId?: number;
+    tags?: string[];
+  }): Promise<{
+    id: number;
+    status: string;
+    createdAt: string;
+    updatedAt: string;
+    type: 'movie' | 'tv';
+    is4k: boolean;
+    serverId: number;
+    profileId: number;
+    rootFolder: string;
+    languageProfileId?: number;
+    tags: string[];
+    media: {
+      id: number;
+      mediaType: 'movie' | 'tv';
+      tmdbId: number;
+      tvdbId?: number;
+      imdbId?: string;
+      status: string;
+      status4k: string;
+    };
+    requestedBy: {
+      id: number;
+      email: string;
+      username?: string;
+      displayName?: string;
+      avatar?: string;
+    };
+  }> {
+    return this.request('/request', {
       method: 'POST',
-      body: JSON.stringify(params)
+      body: JSON.stringify(data)
     });
   }
 
-  async updateRequest(requestId: number, status: 'pending' | 'approved' | 'declined'): Promise<MediaRequest> {
-    return this.request<MediaRequest>(`/request/${requestId}/${status}`, {
-      method: 'POST'
+  async updateRequest(id: number, data: {
+    status?: string;
+    is4k?: boolean;
+    serverId?: number;
+    profileId?: number;
+    rootFolder?: string;
+    languageProfileId?: number;
+    tags?: string[];
+  }): Promise<void> {
+    await this.request(`/request/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
     });
   }
 
-  async deleteRequest(requestId: number): Promise<void> {
-    await this.request(`/request/${requestId}`, {
+  async deleteRequest(id: number): Promise<void> {
+    await this.request(`/request/${id}`, {
       method: 'DELETE'
     });
   }
@@ -161,11 +328,11 @@ export class OverseerrApi {
   }
 
   // Status
-  async getStatus(): Promise<{
+  async getServerInfo(): Promise<{
     version: string;
     commitTag: string;
     updateAvailable: boolean;
-    commitsBehind: number;
+    platform: string;
   }> {
     return this.request('/status');
   }

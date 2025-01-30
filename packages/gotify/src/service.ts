@@ -2,7 +2,7 @@ import { GotifyApi } from './api.js';
 import { GotifyConfig, Message, PagedMessages, Application, Client, Health, Stats, Version } from './types.js';
 
 export class GotifyService {
-  private api: GotifyApi;
+  private readonly api: GotifyApi;
 
   constructor(config: GotifyConfig) {
     this.api = new GotifyApi(config);
@@ -18,10 +18,10 @@ export class GotifyService {
     priority?: number;
     extras?: Record<string, unknown>;
   } = {}): Promise<Message> {
-    return this.api.createMessage(
+    return this.api.sendMessage(
+      options.title ?? message,
       message,
-      options.title,
-      options.priority,
+      options.priority ?? 5,
       options.extras
     );
   }
@@ -39,12 +39,22 @@ export class GotifyService {
     return this.api.getApplications();
   }
 
-  async createApplication(name: string, description: string): Promise<Application> {
-    return this.api.createApplication(name, description);
+  async createApplication(data: {
+    name: string;
+    description: string;
+  }): Promise<Application> {
+    const response = await this.api.createApplication(data);
+    return {
+      ...response,
+      image: '' // Default empty image for new applications
+    };
   }
 
-  async updateApplication(id: number, name: string, description: string): Promise<Application> {
-    return this.api.updateApplication(id, name, description);
+  async updateApplication(id: number, data: {
+    name?: string;
+    description?: string;
+  }): Promise<Application> {
+    return this.api.updateApplication(id, data);
   }
 
   async deleteApplication(id: number): Promise<void> {
@@ -66,8 +76,10 @@ export class GotifyService {
     return this.api.createClient(name);
   }
 
-  async updateClient(id: number, name: string): Promise<Client> {
-    return this.api.updateClient(id, name);
+  async updateClient(id: number, data: {
+    name: string;
+  }): Promise<Client> {
+    return this.api.updateClient(id, { name: data.name });
   }
 
   async deleteClient(id: number): Promise<void> {
@@ -109,7 +121,7 @@ export class GotifyService {
     description: string,
     imageUrl: string
   ): Promise<Application> {
-    const app = await this.createApplication(name, description);
+    const app = await this.createApplication({ name, description });
     await this.setApplicationImage(app.id, imageUrl);
     return app;
   }

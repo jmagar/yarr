@@ -1,6 +1,7 @@
+import { ServiceConfig } from '@media-mcp/shared';
+
 // Configuration
-export interface OverseerrConfig {
-  url: string;
+export interface OverseerrConfig extends ServiceConfig {
   apiKey: string;
 }
 
@@ -15,12 +16,42 @@ export enum ErrorCode {
 export interface MediaRequest {
   id: number;
   status: RequestStatus;
-  media: Media;
-  requestedBy: User;
-  modifiedBy?: User;
   createdAt: string;
   updatedAt: string;
   type: 'movie' | 'tv';
+  media: {
+    id: number;
+    tmdbId: number;
+    tvdbId?: number;
+    status: number;
+    status4k: number;
+    createdAt: string;
+    updatedAt: string;
+    lastSeasonChange?: string;
+    mediaType: 'movie' | 'tv';
+    mediaInfo?: {
+      downloadStatus?: string[];
+      downloadStatus4k?: string[];
+    };
+  };
+  requestedBy: {
+    id: number;
+    email: string;
+    username?: string;
+    displayName?: string;
+  };
+  modifiedBy?: {
+    id: number;
+    email: string;
+    username?: string;
+    displayName?: string;
+  };
+  seasons?: Array<{
+    id: number;
+    seasonNumber: number;
+    status: number;
+    status4k: number;
+  }>;
 }
 
 export type RequestStatus = 
@@ -138,4 +169,14 @@ export interface Stats {
   totalSeasons: number;
   totalEpisodes: number;
   recentlyAdded: Media[];
+}
+
+export interface PageInfo<T> {
+  pageInfo: {
+    pages: number;
+    pageSize: number;
+    results: number;
+    page: number;
+  };
+  results: T[];
 } 

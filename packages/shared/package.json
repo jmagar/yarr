@@ -13,7 +13,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc -w",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.4.1",

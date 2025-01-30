@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from 'zod';
 import { OverseerrService } from '../service.js';
+import { RequestStatus } from '../types.js';
 
 export function registerTools(server: McpServer, service: OverseerrService) {
   // Search Tools
@@ -14,21 +15,24 @@ export function registerTools(server: McpServer, service: OverseerrService) {
     async ({ query, page }) => {
       try {
         const results = await service.searchAll(query, { page });
+        const formattedText = [
+          'Search Results:',
+          '',
+          results.movies.length ? 'Movies:' : '',
+          ...results.movies.map(m => 
+            `- ${m.title} (${m.releaseDate?.split('-')[0] || 'N/A'})\n  ${m.overview}`
+          ),
+          results.movies.length ? '' : '',
+          results.tvShows.length ? 'TV Shows:' : '',
+          ...results.tvShows.map(t => 
+            `- ${t.name} (${t.firstAirDate?.split('-')[0] || 'N/A'})\n  ${t.overview}`
+          )
+        ].join('\n');
+
         return {
           content: [{
             type: "text",
-            text: JSON.stringify({
-              movies: results.movies.map(m => ({
-                title: m.title,
-                releaseDate: m.releaseDate,
-                overview: m.overview
-              })),
-              tvShows: results.tvShows.map(t => ({
-                name: t.name,
-                firstAirDate: t.firstAirDate,
-                overview: t.overview
-              }))
-            }, null, 2)
+            text: formattedText
           }]
         };
       } catch (error) {
@@ -80,66 +84,98 @@ export function registerTools(server: McpServer, service: OverseerrService) {
     }
   );
 
+  // List requests
   server.tool(
-    "overseerr:list-requests",
-    "List media requests",
+    'overseerr:requests:list',
+    'List media requests',
     {
-      status: z.enum(['pending', 'approved', 'declined', 'available']).describe("Request status to filter by"),
-      take: z.number().optional().describe("Number of requests to return"),
-      skip: z.number().optional().describe("Number of requests to skip")
+      take: z.number().optional(),
+      skip: z.number().optional(),
+      filter: z.enum(['pending', 'approved', 'declined', 'available'] as const).optional(),
+      sort: z.string().optional(),
+      requestedBy: z.number().optional()
     },
-    async ({ status, take, skip }) => {
-      try {
-        const requests = await service.getRequestsByStatus(status, { take, skip });
-        return {
-          content: [{
-            type: "text",
-            text: JSON.stringify(requests.map(r => ({
-              id: r.id,
-              type: r.type,
-              status: r.status,
-              requestedBy: r.requestedBy.username || r.requestedBy.email,
-              createdAt: r.createdAt
-            })), null, 2)
-          }]
-        };
-      } catch (error) {
-        return {
-          content: [{
-            type: "text",
-            text: `Error listing requests: ${error instanceof Error ? error.message : 'Unknown error'}`
-          }],
-          isError: true
-        };
-      }
+    async (params) => {
+      const requests = await service.getRequests(params);
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(requests, null, 2)
+        }]
+      };
     }
   );
 
+  // Get request details
   server.tool(
-    "overseerr:update-request",
-    "Update request status",
+    'overseerr:requests:get',
+    'Get request details',
     {
-      requestId: z.number().describe("Request ID to update"),
-      status: z.enum(['approved', 'declined']).describe("New status")
+      requestId: z.number()
+    },
+    async ({ requestId }) => {
+      const request = await service.getRequest(requestId);
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(request, null, 2)
+        }]
+      };
+    }
+  );
+
+  // Update request status
+  server.tool(
+    'overseerr:requests:update-status',
+    'Update request status',
+    {
+      requestId: z.number(),
+      status: z.enum(['pending', 'approved', 'declined', 'available'] as const)
     },
     async ({ requestId, status }) => {
-      try {
-        const request = await service.getApi().updateRequest(requestId, status);
-        return {
-          content: [{
-            type: "text",
-            text: `Successfully ${status} request ${requestId}`
-          }]
-        };
-      } catch (error) {
-        return {
-          content: [{
-            type: "text",
-            text: `Error updating request: ${error instanceof Error ? error.message : 'Unknown error'}`
-          }],
-          isError: true
-        };
-      }
+      const request = await service.updateRequestStatus(requestId, status);
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(request, null, 2)
+        }]
+      };
+    }
+  );
+
+  // Delete request
+  server.tool(
+    'overseerr:requests:delete',
+    'Delete request',
+    {
+      requestId: z.number()
+    },
+    async ({ requestId }) => {
+      await service.deleteRequest(requestId);
+      return {
+        content: [{
+          type: 'text',
+          text: `Request ${requestId} deleted successfully`
+        }]
+      };
+    }
+  );
+
+  // Get requests by status
+  server.tool(
+    'overseerr:requests:by-status',
+    'Get requests by status',
+    {
+      status: z.enum(['pending', 'approved', 'declined', 'available'] as const)
+    },
+    async ({ status }) => {
+      const requests = await service.getRequestsByStatus(status);
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify(requests, null, 2)
+        }]
+      };
     }
   );
 
@@ -223,15 +259,16 @@ export function registerTools(server: McpServer, service: OverseerrService) {
     {},
     async () => {
       try {
-        const status = await service.getApi().getStatus();
+        const status = await service.getSystemStatus();
         return {
           content: [{
             type: "text",
             text: JSON.stringify({
               version: status.version,
-              commitTag: status.commitTag,
-              updateAvailable: status.updateAvailable,
-              commitsBehind: status.commitsBehind
+              healthy: status.healthy,
+              pendingRequestCount: status.pendingRequestCount,
+              availableMovies: status.availableMovies,
+              availableSeries: status.availableSeries
             }, null, 2)
           }]
         };
@@ -246,4 +283,4 @@ export function registerTools(server: McpServer, service: OverseerrService) {
       }
     }
   );
-} 
+}

@@ -1,33 +1,45 @@
-import { z } from 'zod';
+/**
+ * Media types
+ */
+export type MediaType = 'movie' | 'tv' | 'person';
 
-export const MediaType = z.enum(['movie', 'tv', 'music', 'book']);
-export type MediaType = z.infer<typeof MediaType>;
+/**
+ * Quality profiles
+ */
+export type Quality = 
+  | 'SD'
+  | 'HD-720p'
+  | 'HD-1080p'
+  | '4K'
+  | 'ANY';
 
-export const Quality = z.enum(['2160p', '1080p', '720p', 'SD', 'unknown']);
-export type Quality = z.infer<typeof Quality>;
+/**
+ * Language codes
+ */
+export type Language = string;
 
-export const Language = z.enum(['eng', 'fre', 'multi', 'unknown']);
-export type Language = z.infer<typeof Language>;
-
+/**
+ * Media result interface
+ */
 export interface MediaResult {
   id: number;
   title: string;
-  year?: number;
   type: MediaType;
+  year?: number;
   overview?: string;
   posterPath?: string;
   backdropPath?: string;
+  popularity?: number;
+  voteAverage?: number;
+  voteCount?: number;
 }
 
-export interface SearchResult {
-  title: string;
-  size: number;
-  seeders?: number;
-  leechers?: number;
-  quality: Quality;
-  language: Language;
-  downloadUrl: string;
-  magnetUrl?: string;
-  indexer: string;
-  publishDate: string;
+/**
+ * Search result interface
+ */
+export interface SearchResult<T = MediaResult> {
+  results: T[];
+  page: number;
+  totalPages: number;
+  totalResults: number;
 } 

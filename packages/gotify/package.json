@@ -15,7 +15,8 @@
     "dev": "tsx watch src/bin/server.ts",
     "lint": "eslint src",
     "start": "node dist/bin/server.js",
-    "serve": "npm run build && npm run start"
+    "serve": "npm run build && npm run start",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@media-mcp/shared": "workspace:*",

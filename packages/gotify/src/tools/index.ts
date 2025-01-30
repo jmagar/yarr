@@ -159,7 +159,7 @@ export function registerTools(server: McpServer, service: GotifyService) {
       try {
         const app = imageUrl
           ? await service.createApplicationWithImage(name, description, imageUrl)
-          : await service.createApplication(name, description);
+          : await service.createApplication({ name, description });
 
         return {
           content: [{

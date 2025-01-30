@@ -6,20 +6,24 @@
   "scripts": {
     "build": "pnpm build:shared && pnpm build:services && pnpm build:server",
     "build:shared": "pnpm --filter @media-mcp/shared build",
-    "build:services": "pnpm --filter @media-mcp/prowlarr --filter @media-mcp/sonarr --filter @media-mcp/gotify --filter @media-mcp/overseerr build",
+    "build:services": "pnpm --filter @media-mcp/prowlarr --filter @media-mcp/sonarr --filter @media-mcp/gotify --filter @media-mcp/overseerr --filter @media-mcp/radarr --filter @media-mcp/tautulli --filter @media-mcp/sabnzbd --filter @media-mcp/qbittorrent --filter @media-mcp/plex --filter @media-mcp/tmdb build",
     "build:server": "pnpm --filter @media-mcp/server build",
     "prestart": "node build/project-setup.js",
     "start": "pnpm --filter @media-mcp/server start",
     "dev": "pnpm -r dev",
     "test": "pnpm -r test",
-    "lint": "pnpm -r lint"
+    "lint": "pnpm -r lint",
+    "lint:fix": "pnpm -r lint -- --fix",
+    "type-check": "pnpm -r type-check",
+    "check": "pnpm type-check && pnpm lint",
+    "check:fix": "pnpm type-check && pnpm lint:fix"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.4.1",
     "@types/node": "^22.12.0",
     "@typescript-eslint/eslint-plugin": "^8.22.0",
     "@typescript-eslint/parser": "^8.22.0",
-    "cross-env": "^7.0.3",
+    "dotenv": "^16.4.1",
     "eslint": "^9.19.0",
     "prettier": "^3.4.2",
     "typescript": "^5.7.3",

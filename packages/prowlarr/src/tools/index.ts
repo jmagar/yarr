@@ -69,7 +69,7 @@ export function registerTools(server: McpServer, service: ProwlarrService) {
     },
     async ({ indexerId }) => {
       try {
-        const stats = await service.getStats(indexerId);
+        const stats = await service.getStats();
         return {
           content: [{
             type: "text",
@@ -96,7 +96,7 @@ export function registerTools(server: McpServer, service: ProwlarrService) {
       try {
         const indexers = await service.getIndexers();
         const status = {
-          activeIndexers: indexers.filter(i => i.enable).length,
+          activeIndexers: indexers.filter(i => i.enabled).length,
           totalIndexers: indexers.length,
           authentication: "Connected successfully",
           url: process.env.PROWLARR_URL

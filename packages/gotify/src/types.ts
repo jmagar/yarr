@@ -1,6 +1,8 @@
+import { ServiceConfig } from '@media-mcp/shared';
+
 // Configuration
-export interface GotifyConfig {
-  url: string;
+export interface GotifyConfig extends ServiceConfig {
+  apiKey: string;
   applicationToken: string;  // For sending messages
   clientToken?: string;     // For receiving messages (optional)
 }
@@ -14,12 +16,12 @@ export enum TokenType {
 // Message Types
 export interface Message {
   id: number;
-  appid: number;
+  appid: string;
   message: string;
   title: string;
   priority: number;
-  date: string;
   extras?: Record<string, unknown>;
+  date: string;
 }
 
 export interface PagedMessages {
@@ -27,6 +29,7 @@ export interface PagedMessages {
   paging: {
     since?: number;
     limit?: number;
+    next?: string;
     size: number;
   };
 }
@@ -36,8 +39,8 @@ export interface Application {
   id: number;
   name: string;
   description: string;
-  token: string;
   internal: boolean;
+  token: string;
   image: string;
 }
 
@@ -50,15 +53,15 @@ export interface Client {
 
 // Health Types
 export interface Health {
-  health: "green" | "yellow" | "red";
-  database: "green" | "yellow" | "red";
+  health: 'green' | 'yellow' | 'red';
+  database: 'green' | 'yellow' | 'red';
 }
 
 // Version Types
 export interface Version {
   version: string;
-  commit: string;
   buildDate: string;
+  commit: string;
 }
 
 // API Response Types
@@ -92,7 +95,7 @@ export interface Command {
 
 // Stats Types
 export interface Stats {
-  messages: number;
-  applications: number;
-  clients: number;
+  appCount: number;
+  clientCount: number;
+  messageCount: number;
 } 

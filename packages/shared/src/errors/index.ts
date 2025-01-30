@@ -1,34 +1,56 @@
+/**
+ * Common error codes across services
+ */
+export type ErrorCode = 
+  | 'NETWORK_ERROR'
+  | 'API_ERROR'
+  | 'RATE_LIMIT'
+  | 'VALIDATION_ERROR'
+  | 'AUTHENTICATION_ERROR'
+  | 'NOT_FOUND'
+  | 'TIMEOUT'
+  | 'UNKNOWN';
+
+/**
+ * Base service error
+ */
 export class ServiceError extends Error {
   constructor(
-    public code: string,
+    public readonly code: ErrorCode,
     message: string,
-    public details?: Record<string, unknown>
+    public readonly context?: unknown
   ) {
     super(message);
     this.name = 'ServiceError';
   }
 }
 
-export class ConfigurationError extends Error {
-  constructor(service: string, message: string) {
-    super(`${service} configuration error: ${message}`);
+/**
+ * Configuration error
+ */
+export class ConfigurationError extends ServiceError {
+  constructor(message: string, context?: unknown) {
+    super('VALIDATION_ERROR', message, context);
     this.name = 'ConfigurationError';
   }
 }
 
-export class AuthenticationError extends Error {
-  constructor(service: string, message: string) {
-    super(`${service} authentication error: ${message}`);
+/**
+ * Authentication error
+ */
+export class AuthenticationError extends ServiceError {
+  constructor(message: string, context?: unknown) {
+    super('AUTHENTICATION_ERROR', message, context);
     this.name = 'AuthenticationError';
   }
 }
 
-export class RateLimitError extends Error {
-  constructor(
-    service: string,
-    public retryAfter?: number
-  ) {
-    super(`${service} rate limit exceeded${retryAfter ? `. Retry after ${retryAfter} seconds` : ''}`);
+/**
+ * Rate limit error
+ */
+export class RateLimitError extends ServiceError {
+  constructor(message: string, context?: unknown) {
+    super('RATE_LIMIT', message, context);
     this.name = 'RateLimitError';
   }
 } 
